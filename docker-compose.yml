@@ -1,0 +1,23 @@
+version: '3'
+
+services:
+  ingestion:
+    build: ./ingestion
+    environment:
+      - AZURE_STORAGE_ACCOUNT_NAME=your_account
+      - AZURE_STORAGE_ACCOUNT_KEY=your_key
+
+  transformation:
+    build: ./transformation
+    environment:
+      - AZURE_STORAGE_ACCOUNT_NAME=your_account
+      - AZURE_STORAGE_ACCOUNT_KEY=your_key
+    depends_on:
+      - ingestion
+
+  load-sql:
+    build: ./load-sql
+    environment:
+      - SQL_CONNECTION_STRING=your_connection_string
+    depends_on:
+      - transformation
