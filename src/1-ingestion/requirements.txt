@@ -1,0 +1,5 @@
+# ------------------------------------ app\3-ingestion\requirements.txt ------------------------------------ 
+requests==2.31.0
+azure-identity==1.12.0
+azure-storage-file-datalake==12.13.0
+tenacity==8.2.3

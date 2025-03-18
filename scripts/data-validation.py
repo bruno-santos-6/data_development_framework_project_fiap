@@ -1,26 +1,40 @@
+# ------------------------------------ scripts\data-validation.py ------------------------------------ 
 from azure.storage.filedatalake import DataLakeServiceClient
+from azure.identity import ClientSecretCredential
 import os
+import pandas as pd
 
 def validate_data():
-    account_name = os.getenv("AZURE_STORAGE_ACCOUNT_NAME")
-    account_key = os.getenv("AZURE_STORAGE_ACCOUNT_KEY")
-    
-    service_client = DataLakeServiceClient(
-        account_url=f"https://{account_name}.dfs.core.windows.net",
-        credential=account_key
+    credential = ClientSecretCredential(
+        tenant_id=os.getenv("AZURE_TENANT_ID"),
+        client_id=os.getenv("AZURE_CLIENT_ID"),
+        client_secret=os.getenv("AZURE_CLIENT_SECRET")
     )
 
-    # Verificar dados brutos
-    raw_files = service_client.get_file_system_client("raw").get_paths()
-    print(f"Total arquivos raw: {sum(1 for _ in raw_files)}")
+    service_client = DataLakeServiceClient(
+        account_url=f"https://{os.getenv('STORAGE_ACCOUNT_NAME')}.dfs.core.windows.net",
+        credential=credential
+    )
 
-    # Verificar dados processados
-    refined_files = service_client.get_file_system_client("refined").get_paths()
-    refined_count = sum(1 for _ in refined_files)
-    print(f"Total arquivos refined: {refined_count}")
+    raw_client = service_client.get_file_system_client("raw")
+    raw_files = list(raw_client.get_paths("bcb/inflacao"))  
+    print(f"✅ Total arquivos raw: {len(raw_files)}")
+    
+    if len(raw_files) < 12:
+        raise ValueError(f"Quantidade insuficiente de arquivos raw: {len(raw_files)}")
 
-    if refined_count == 0:
-        raise Exception("Validação falhou: Nenhum dado processado encontrado")
+    refined_client = service_client.get_file_system_client("refined")
+    processed_file = refined_client.get_file_client("processed/dados_financeiros.csv")
+    
+    if not processed_file.exists():
+        raise FileNotFoundError("Arquivo processado não encontrado no Data Lake")
+
+    df = pd.read_csv(processed_file.download_file().readall())
+    required_columns = {'orgao', 'categoria', 'ano', 'mes', 'valor'}
+    if not required_columns.issubset(df.columns):
+        raise AssertionError(f"Colunas faltantes: {required_columns - set(df.columns)}")
+
+    print("✅ Validação concluída com sucesso")
 
 if __name__ == "__main__":
     validate_data()

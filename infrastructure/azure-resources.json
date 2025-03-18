@@ -1,33 +1,120 @@
 {
     "$schema": "https://schema.management.azure.com/schemas/2019-04-01/deploymentTemplate.json#",
     "contentVersion": "1.0.0.0",
+    "parameters": {
+        "clusterName": {
+            "type": "string",
+            "defaultValue": "aks-prod-cluster-fiap",
+            "metadata": {
+                "description": "Nome do cluster AKS"
+            }
+        },
+        "storageAccountName": {
+            "type": "string",
+            "defaultValue": "sadatalakeprod",
+            "metadata": {
+                "description": "Nome da conta de armazenamento"
+            }
+        },
+        "location": {
+            "type": "string",
+            "defaultValue": "eastus",
+            "metadata": {
+                "description": "Localização dos recursos"
+            }
+        }
+    },
     "resources": [
         {
             "type": "Microsoft.ContainerService/managedClusters",
             "apiVersion": "2023-02-01",
-            "name": "aks-cluster",
-            "location": "eastus",
+            "name": "[parameters('clusterName')]",
+            "location": "[parameters('location')]",
+            "tags": {
+                "Environment": "Production",
+                "Project": "DataDevelopmentFramework",
+                "Owner": "DataEngineeringTeam"
+            },
             "properties": {
-                "kubernetesVersion": "1.25",
-                "dnsPrefix": "yourdns",
-                "agentPoolProfiles": [{
-                    "name": "nodepool1",
-                    "count": 3,
-                    "vmSize": "Standard_B2s"
-                }]
+                "kubernetesVersion": "1.25.6",
+                "dnsPrefix": "[concat(parameters('clusterName'), '-dns')]",
+                "enableRBAC": true,
+                "agentPoolProfiles": [
+                    {
+                        "name": "systempool",
+                        "count": 3,
+                        "vmSize": "Standard_DS3_v2",
+                        "osType": "Linux",
+                        "type": "VirtualMachineScaleSets",
+                        "mode": "System",
+                        "maxPods": 110,
+                        "enableAutoScaling": true,
+                        "minCount": 3,
+                        "maxCount": 10
+                    },
+                    {
+                        "name": "userpool",
+                        "count": 5,
+                        "vmSize": "Standard_DS3_v2",
+                        "osType": "Linux",
+                        "type": "VirtualMachineScaleSets",
+                        "mode": "User",
+                        "maxPods": 110,
+                        "enableAutoScaling": true,
+                        "minCount": 5,
+                        "maxCount": 20
+                    }
+                ],
+                "networkProfile": {
+                    "networkPlugin": "azure",
+                    "networkPolicy": "calico",
+                    "loadBalancerSku": "Standard"
+                },
+                "addonProfiles": {
+                    "omsagent": {
+                        "enabled": true,
+                        "config": {
+                            "logAnalyticsWorkspaceResourceID": "/subscriptions/075bacb9-59ee-438a-ba03-3eb9db5ee5d8/resourcegroups/rg-fiap-prod/providers/microsoft.operationalinsights/workspaces/log-analytics-fiap-prod"
+                        }
+                    }
+                },
+                "servicePrincipalProfile": {
+                    "clientId": "3a4b5c6d-7e8f-9a0b-c1d2-e3f4a5b6c7d8",
+                    "secret": "P@ssw0rd2024!Azure$"
+                }
             }
         },
         {
             "type": "Microsoft.Storage/storageAccounts",
             "apiVersion": "2022-09-01",
-            "name": "yourdatalake",
-            "location": "eastus",
-            "kind": "StorageV2",
-            "sku": {
-                "name": "Standard_LRS"
+            "name": "[parameters('storageAccountName')]",
+            "location": "[parameters('location')]",
+            "tags": {
+                "Environment": "Production",
+                "Project": "DataDevelopmentFramework",
+                "CostCenter": "DataEngineering"
             },
+            "sku": {
+                "name": "Standard_GRS"
+            },
+            "kind": "StorageV2",
             "properties": {
-                "isHnsEnabled": true
+                "isHnsEnabled": true,
+                "largeFileSharesState": "Enabled",
+                "encryption": {
+                    "services": {
+                        "blob": {
+                            "enabled": true
+                        },
+                        "file": {
+                            "enabled": true
+                        }
+                    },
+                    "keySource": "Microsoft.Storage"
+                },
+                "supportsHttpsTrafficOnly": true,
+                "accessTier": "Hot",
+                "minimumTlsVersion": "TLS1_2"
             }
         }
     ]

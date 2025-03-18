@@ -1,23 +1,54 @@
-version: '3'
-
+version: '3.8'
 services:
   ingestion:
-    build: ./ingestion
+    build: 
+      context: ./src/1-ingestion  
+      dockerfile: Dockerfile
+    env_file:
+      - environments/dev.env  
     environment:
-      - AZURE_STORAGE_ACCOUNT_NAME=your_account
-      - AZURE_STORAGE_ACCOUNT_KEY=your_key
+      STORAGE_ACCOUNT_NAME: ${STORAGE_ACCOUNT_NAME} 
+      AZURE_TENANT_ID: ${AZURE_TENANT_ID}
+      AZURE_CLIENT_ID: ${AZURE_CLIENT_ID}
+      AZURE_CLIENT_SECRET: ${AZURE_CLIENT_SECRET}
+    networks:
+      - data-pipeline
+    ports:
+      - "8080:8080" 
+    healthcheck:
+      test: ["CMD", "curl", "-f", "http://localhost:8080/health"]
+      interval: 30s
+      timeout: 10s
+      retries: 3
 
   transformation:
-    build: ./transformation
-    environment:
-      - AZURE_STORAGE_ACCOUNT_NAME=your_account
-      - AZURE_STORAGE_ACCOUNT_KEY=your_key
+    build: 
+      context: ./src/2-transform
+      dockerfile: Dockerfile
+    env_file:
+      - environments/dev.env
     depends_on:
-      - ingestion
+      ingestion:
+        condition: service_healthy 
+    networks:
+      - data-pipeline
+    ports:
+      - "8081:8080"
 
-  load-sql:
-    build: ./load-sql
-    environment:
-      - SQL_CONNECTION_STRING=your_connection_string
+  load:
+    build: 
+      context: ./src/3-load
+      dockerfile: Dockerfile
+    env_file:
+      - environments/dev.env
     depends_on:
-      - transformation
+      transformation:
+        condition: service_healthy
+    networks:
+      - data-pipeline
+    ports:
+      - "8082:8080"
+
+networks:
+  data-pipeline:
+    driver: bridge

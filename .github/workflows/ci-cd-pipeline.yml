@@ -7,16 +7,29 @@ on:
     branches: [ main ]
 
 env:
-  AZURE_CONTAINER_REGISTRY: youracr.azurecr.io
-  RESOURCE_GROUP: your-resource-group
-  AKS_CLUSTER: your-aks-cluster
+  AZURE_CONTAINER_REGISTRY: azcontaineregistryfiap.azurecr.io
+  RESOURCE_GROUP: mba-bruno
+  AKS_CLUSTER: k8s-mba-data-development-framework-aks
 
 jobs:
   build-and-test:
-    runs-on: ubuntu-latest
+    runs-on: MicrosoftWindowsDesktop:Windows-10:22h2-entn-g2:latest
     steps:
     - name: Checkout code
       uses: actions/checkout@v3
+
+    - name: Set up Docker
+      run: |
+        # Força Docker para usar containers Linux
+        if (docker info -f '{{.OSType}}') -ne 'linux' {
+          & "$env:ProgramFiles\Docker\Docker\DockerCli.exe" -SwitchDaemon
+        }
+        docker info
+
+    - name: Start Docker service
+      run: |
+        Start-Service Docker
+        docker version
 
     - name: Set up Docker Buildx
       uses: docker/setup-buildx-action@v2
@@ -29,19 +42,22 @@ jobs:
         password: ${{ secrets.ACR_PASSWORD }}
 
     - name: Build and Push Ingestion Image
-      working-directory: ./ingestion
+      working-directory: ./src/1-ingestion
+      shell: pwsh
       run: |
         docker build -t ${{ env.AZURE_CONTAINER_REGISTRY }}/ingestion:latest .
         docker push ${{ env.AZURE_CONTAINER_REGISTRY }}/ingestion:latest
 
     - name: Build and Push Transformation Image
-      working-directory: ./transformation
+      working-directory: ./src/2-transform
+      shell: pwsh
       run: |
         docker build -t ${{ env.AZURE_CONTAINER_REGISTRY }}/transformation:latest .
         docker push ${{ env.AZURE_CONTAINER_REGISTRY }}/transformation:latest
 
     - name: Build and Push Load-SQL Image
-      working-directory: ./load-sql
+      working-directory: ./src/3-load
+      shell: pwsh
       run: |
         docker build -t ${{ env.AZURE_CONTAINER_REGISTRY }}/load-sql:latest .
         docker push ${{ env.AZURE_CONTAINER_REGISTRY }}/load-sql:latest

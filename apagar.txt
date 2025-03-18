@@ -1,0 +1,701 @@
+Eu tenho que fazer esse projeto de atividade substitutiva para o meu MBA DE ENGENHARIA DE DADOS
+
+PROVA SUBISTITUTIVA DATA DEVELOPMENT FRAMEWORKS 
+ABDO  
+
+"""
+Prova Sub  
+Página 2 de 3 
+Implementando Pipeline de Dados com Docker, Kubernetes e Azure 
+Neste trabalho, você deverá implementar um pipeline de dados que fará a 
+coleta, processamento e armazenamento de grandes volumes de dados. Deverá ser 
+utilizado GIT para versionamento, Docker para conteinerização, VMS do Azure para 
+os ambientes de Desenvolvimento e Produção e Azure Kubernetes Service para 
+orquestração dos containers. 
+Deverá ser desenvolvida uma introdução, com visão geral (descrevendo o 
+pipeline que será implementado), objetivo/justificativa e as tecnologias utilizadas. 
+Deverá ser apresentado um modelo com a arquitetura proposta, ilustrando a interação 
+entre as tecnologias utilizadas. Para o objetivo/justificativa deverá ser discutida a 
+escalabilidade, segurança e custo da solução. 
+Deverá ser criado um repositório GIT para o projeto, com a estruturação bem 
+definida de pastas e arquivos para os diferentes componentes do pipeline (código, 
+arquivos de configuração, dockerfiles, etc.). Será considerada uma boa prática o uso 
+de branches para diferentes partes do pipeline.  
+O projeto deverá ser documentado detalhadamente no repositório. 
+Deverá ser criada uma VM Azure para o ambiente de desenvolvimento do 
+pipeline, e nessa máquina virtual deverão ser instaladas todas as ferramentas 
+essenciais. Também é necessário ao menos uma VM Azure para o pipeline em 
+produção. Essa VM deve ser configurada visando a segurança da rede, para que o 
+ambiente esteja protegido e acessível apenas para usuários autorizados. 
+Serão criados Dockerfiles para os componentes do pipeline (serviços de coleta, 
+processamento e armazenamento em banco) e imagens Docker para teste local dos 
+Containers. 
+Deverá ser configurado um Cluster AKS para orquestrar os containers Docker 
+em produção. Será feito o Deploy dos containers no AKS com configuração de 
+escalabilidade automática. Serão consideradas boas práticas a implementação de 
+ferramentas de monitoramento e configuração de políticas de recuperação em caso 
+de falhas. Também será uma boa prática a execução de testes de carga para avaliar 
+Prova Sub  
+Página 3 de 3 
+a escalabilidade do pipeline, bem como a configuração para otimização de custos e 
+performance a partir desses testes. 
+ENTREGA: 
+O projeto poderá ser entregue em forma de link para o repositório GIT completo 
+e através de Relatório detalhado (PDF, docx, etc.) com todos os passos do projeto. 
+Serão consideradas boas práticas a análise dos resultados obtidos e sugestões de 
+melhorias e próximos passos para o projeto.  
+Boa sorte!
+"""
+
+SEGUE ABAIXO OS CÓDIGOS QUE EU FIZ, AJUSTE QUALQUER ERRO QUE NOTAR OU CONFIGURAÇÃO OU CÓDIGO FALTANTE
+
+branch "main"
+
+Estrutura de pastas do repositório:
+
+PS C:\Users\bruno\OneDrive\Documentos\FIAP\data_development_framework_project_fiap> tree /F
+Listagem de caminhos de pasta
+O número de série do volume é E3C7-3B30
+C:.
+│   docker-compose.yml
+│   README.md
+│   
+├───.github
+│   └───workflows
+│           ci-cd-pipeline.yml
+│
+├───app
+│   ├───1-ingestion
+│   │       Dockerfile
+│   │       ingestion.py
+│   │       requirements.txt
+│   │       
+│   ├───2-transform
+│   │       Dockerfile
+│   │       transformation.py
+│   │       
+│   ├───3-load
+│   │       Dockerfile
+│   │       load_sql.py
+│   │       
+│   ├───build
+│   └───docs
+├───environments
+│       dev.env
+│       prod.env
+│       
+├───infrastructure
+│       aks-deployment.yml
+│       azure-resources.json
+│       vm-setup.sh
+│
+└───scripts
+        data-validation.py
+        stress-test.py
+
+
+
+
+# ------------------------------------ .github\workflows\ci-cd-pipeline.yml ------------------------------------ 
+
+name: Data Pipeline CI/CD
+
+on:
+  push:
+    branches: [ main ]
+  pull_request:
+    branches: [ main ]
+
+env:
+  AZURE_CONTAINER_REGISTRY: azcontaineregistryfiap.azurecr.io
+  RESOURCE_GROUP: mba-bruno
+  AKS_CLUSTER: k8s-mba-data-development-framework-aks
+
+jobs:
+  build-and-test:
+    runs-on: MicrosoftWindowsDesktop:Windows-10:22h2-entn-g2:latest
+    steps:
+    - name: Checkout code
+      uses: actions/checkout@v3
+
+    - name: Set up Docker Buildx
+      uses: docker/setup-buildx-action@v2
+
+    - name: Login to Azure Container Registry
+      uses: azure/docker-login@v1
+      with:
+        login-server: ${{ env.AZURE_CONTAINER_REGISTRY }}
+        username: ${{ secrets.ACR_USERNAME }}
+        password: ${{ secrets.ACR_PASSWORD }}
+
+    - name: Build and Push Ingestion Image
+      working-directory: ./ingestion
+      run: |
+        docker build -t ${{ env.AZURE_CONTAINER_REGISTRY }}/ingestion:latest .
+        docker push ${{ env.AZURE_CONTAINER_REGISTRY }}/ingestion:latest
+
+    - name: Build and Push Transformation Image
+      working-directory: ./transformation
+      run: |
+        docker build -t ${{ env.AZURE_CONTAINER_REGISTRY }}/transformation:latest .
+        docker push ${{ env.AZURE_CONTAINER_REGISTRY }}/transformation:latest
+
+    - name: Build and Push Load-SQL Image
+      working-directory: ./load-sql
+      run: |
+        docker build -t ${{ env.AZURE_CONTAINER_REGISTRY }}/load-sql:latest .
+        docker push ${{ env.AZURE_CONTAINER_REGISTRY }}/load-sql:latest
+
+  deploy-to-aks:
+    needs: build-and-test
+    runs-on: ubuntu-latest
+    steps:
+    - name: Azure Login
+      uses: azure/login@v1
+      with:
+        creds: ${{ secrets.AZURE_CREDENTIALS }}
+
+    - name: Deploy to AKS
+      uses: azure/aks-set-context@v2
+      with:
+        resource-group: ${{ env.RESOURCE_GROUP }}
+        cluster-name: ${{ env.AKS_CLUSTER }}
+
+    - name: Deploy Kubernetes manifests
+      working-directory: ./infrastructure
+      run: |
+        kubectl apply -f aks-deployment.yml
+
+# ------------------------------------ src\1-ingestion\Dockerfile ------------------------------------ 
+FROM python:3.9-slim
+CMD echo "Iniciando ingestão..." && sleep 10 && echo "Dados coletados e salvos no Data Lake!"
+
+# ------------------------------------ src\1-ingestion\ingestion.py ------------------------------------ 
+import requests
+import json
+import os
+from azure.storage.filedatalake import DataLakeServiceClient
+from azure.identity import ClientSecretCredential
+
+# Configuração do Azure Data Lake
+FILE_SYSTEM_NAME = "raw"
+
+# Autenticação no Azure
+credential = ClientSecretCredential(
+    tenant_id=os.getenv("AZURE_TENANT_ID"),
+    client_id=os.getenv("AZURE_CLIENT_ID"),
+    client_secret=os.getenv("AZURE_CLIENT_SECRET")
+)
+service_client = DataLakeServiceClient(
+    account_url=f"https://{STORAGE_ACCOUNT_NAME}.dfs.core.windows.net",
+    credential=credential
+)
+file_system_client = service_client.get_file_system_client(FILE_SYSTEM_NAME)
+
+# Lista de endpoints do Banco Central
+ENDPOINTS = [
+    {
+        "sourceBaseURL": "https://api.bcb.gov.br",
+        "sourceRelativeURL": "dados/serie/bcdata.sgs.10843/dados?formato=json",
+        "sinkFileName": "inflacao_ipca_duraveis.json",
+        "sinkFolderPath": "bcb/inflacao"
+    },
+    {
+        "sourceBaseURL": "https://api.bcb.gov.br",
+        "sourceRelativeURL": "dados/serie/bcdata.sgs.10844/dados?formato=json",
+        "sinkFileName": "inflacao_ipca_servicos.json",
+        "sinkFolderPath": "bcb/inflacao"
+    },
+    {
+        "sourceBaseURL": "https://api.bcb.gov.br",
+        "sourceRelativeURL": "dados/serie/bcdata.sgs.4447/dados?formato=json",
+        "sinkFileName": "inflacao_ipca_comercializaveis.json",
+        "sinkFolderPath": "bcb/inflacao"
+    },
+    {
+        "sourceBaseURL": "https://api.bcb.gov.br",
+        "sourceRelativeURL": "dados/serie/bcdata.sgs.4448/dados?formato=json",
+        "sinkFileName": "inflacao_ipca_nao_comercializaveis.json",
+        "sinkFolderPath": "bcb/inflacao"
+    },
+    {
+        "sourceBaseURL": "https://api.bcb.gov.br",
+        "sourceRelativeURL": "dados/serie/bcdata.sgs.10841/dados?formato=json",
+        "sinkFileName": "inflacao_ipca_bens_nao_duraveis.json",
+        "sinkFolderPath": "bcb/inflacao"
+    },
+    {
+        "sourceBaseURL": "https://api.bcb.gov.br",
+        "sourceRelativeURL": "dados/serie/bcdata.sgs.11428/dados?formato=json",
+        "sinkFileName": "inflacao_ipca_itens_livres.json",
+        "sinkFolderPath": "bcb/inflacao"
+    },
+    {
+        "sourceBaseURL": "https://api.bcb.gov.br",
+        "sourceRelativeURL": "dados/serie/bcdata.sgs.4449/dados?formato=json",
+        "sinkFileName": "inflacao_ipca_precos_monitorados_total.json",
+        "sinkFolderPath": "bcb/inflacao"
+    },
+    {
+        "sourceBaseURL": "https://api.bcb.gov.br",
+        "sourceRelativeURL": "dados/serie/bcdata.sgs.21379/dados?formato=json",
+        "sinkFileName": "inflacao_ipca_indice_de_difusao.json",
+        "sinkFolderPath": "bcb/inflacao"
+    },
+    {
+        "sourceBaseURL": "https://api.bcb.gov.br",
+        "sourceRelativeURL": "dados/serie/bcdata.sgs.16122/dados?formato=json",
+        "sinkFileName": "inflacao_ipca_nucleo_dupla_ponderacao.json",
+        "sinkFolderPath": "bcb/inflacao"
+    },
+    {
+        "sourceBaseURL": "https://api.bcb.gov.br",
+        "sourceRelativeURL": "dados/serie/bcdata.sgs.16121/dados?formato=json",
+        "sinkFileName": "inflacao_ipca_nucleo_exclusao_ex2.json",
+        "sinkFolderPath": "bcb/inflacao"
+    },
+    {
+        "sourceBaseURL": "https://api.bcb.gov.br",
+        "sourceRelativeURL": "dados/serie/bcdata.sgs.4466/dados?formato=json",
+        "sinkFileName": "inflacao_ipca_nucleo_medias_aparadas_com_suavizacao.json",
+        "sinkFolderPath": "bcb/inflacao"
+    },
+    {
+        "sourceBaseURL": "https://api.bcb.gov.br",
+        "sourceRelativeURL": "dados/serie/bcdata.sgs.11426/dados?formato=json",
+        "sinkFileName": "inflacao_ipca_nucleo_medias_aparadas_sem_suavizacao.json",
+        "sinkFolderPath": "bcb/inflacao"
+    },
+    {
+        "sourceBaseURL": "https://api.bcb.gov.br",
+        "sourceRelativeURL": "dados/serie/bcdata.sgs.11427/dados?formato=json",
+        "sinkFileName": "inflacao_ipca_nucleo_exclusao_sem_monitorados_alimentos_domicilio.json",
+        "sinkFolderPath": "bcb/inflacao"
+    }
+]
+
+
+def download_and_upload():
+    for endpoint in ENDPOINTS:
+        # Faz requisição na API
+        url = f"{endpoint['sourceBaseURL']}/{endpoint['sourceRelativeURL']}"
+        response = requests.get(url)
+        data = response.json()
+        
+        # Salva no Azure Data Lake
+        file_client = file_system_client.get_file_client(f"{endpoint['sinkFolderPath']}/{endpoint['sinkFileName']}")
+        file_client.upload_data(json.dumps(data), overwrite=True)
+
+if __name__ == "__main__":
+    download_and_upload()
+
+#  ------------------------------------ requirements.txt ------------------------------------ 
+requests>=2.28.1
+azure-storage-file-datalake>=12.12.0
+azure-identity>=1.13.0
+
+#  ------------------------------------ src\2-transform\Dockerfile ------------------------------------ 
+FROM python:3.9-slim
+CMD echo "Processando dados..." && sleep 5 && echo "Dados transformados e salvos em CSV!"
+
+#  ------------------------------------ src\2-transform\transformation.py ------------------------------------ 
+import requests
+import json
+from azure.storage.filedatalake import DataLakeServiceClient
+from azure.identity import ClientSecretCredential
+
+# Configuração do Azure Data Lake
+AZURE_TENANT_ID = "<seu-tenant-id>"
+AZURE_CLIENT_ID = "<seu-client-id>"
+AZURE_CLIENT_SECRET = "<seu-client-secret>"
+STORAGE_ACCOUNT_NAME = "<seu-storage-account>"
+FILE_SYSTEM_NAME = "raw"
+
+# Autenticação no Azure
+credential = ClientSecretCredential(
+    tenant_id=AZURE_TENANT_ID,
+    client_id=AZURE_CLIENT_ID,
+    client_secret=AZURE_CLIENT_SECRET
+)
+service_client = DataLakeServiceClient(
+    account_url=f"https://{STORAGE_ACCOUNT_NAME}.dfs.core.windows.net",
+    credential=credential
+)
+file_system_client = service_client.get_file_system_client(FILE_SYSTEM_NAME)
+
+# Lista de endpoints do Banco Central
+ENDPOINTS = [
+    {
+        'inflacao_ipca_duraveis': 'Inflacao (IPCA) - Duraveis',
+        'inflacao_ipca_servicos': 'Inflacao (IPCA) - Servicos',
+        'inflacao_ipca_comercializaveis': 'Inflacao (IPCA) - Comercializaveis',
+        'inflacao_ipca_nao_comercializaveis': 'Inflacao (IPCA) - Nao comercializaveis',
+        'inflacao_ipca_bens_nao_duraveis': 'Inflacao (IPCA) - Bens nao-duraveis',
+        'inflacao_ipca_itens_livres': 'Inflacao (IPCA) - Itens livres',
+        'inflacao_ipca_precos_monitorados_total': 'Inflacao (IPCA) - Precos monitorados - Total',
+        'inflacao_ipca_indice_de_difusao': 'Inflacao (IPCA) - Indice de difusao',
+        'inflacao_ipca_nucleo_dupla_ponderacao': 'Inflacao (IPCA) - Nucleo de dupla ponderacao',
+        'inflacao_ipca_nucleo_exclusao_ex2': 'Inflacao (IPCA) - Nucleo por exclusao - ex2',
+        'inflacao_ipca_nucleo_medias_aparadas_com_suavizacao': 'Inflacao (IPCA) - Nucleo medias aparadas com suavizacao',
+        'inflacao_ipca_nucleo_medias_aparadas_sem_suavizacao': 'Inflacao (IPCA) - Nucleo medias aparadas sem suavizacao',
+        'inflacao_ipca_nucleo_exclusao_sem_monitorados_alimentos_domicilio': 'Inflacao (IPCA) - Nucleo por exclusao - Sem monitorados e alimentos no domicilio'
+    }
+]
+
+def download_and_upload():
+    for endpoint in ENDPOINTS:
+        url = f"{endpoint['sourceBaseURL']}/{endpoint['sourceRelativeURL']}"
+        response = requests.get(url)
+        data = response.json()
+        
+        file_client = file_system_client.get_file_client(f"{endpoint['sinkFolderPath']}/{endpoint['sinkFileName']}")
+        file_client.upload_data(json.dumps(data), overwrite=True)
+
+if __name__ == "__main__":
+    download_and_upload()
+
+#  ------------------------------------ src\3-load\Dockerfile ------------------------------------ 
+FROM python:3.9-slim
+CMD echo "Carregando dados no SQL..." && sleep 3 && echo "Dados carregados no Azure SQL!"
+
+# ------------------------------------ src\3-load\load_sql.py ------------------------------------ 
+import pyodbc
+import pandas as pd
+from azure.storage.filedatalake import DataLakeServiceClient
+import os
+
+def load_to_sql():
+    account_name = os.getenv("AZURE_STORAGE_ACCOUNT_NAME")
+    account_key = os.getenv("AZURE_STORAGE_ACCOUNT_KEY")
+    
+    service_client = DataLakeServiceClient(
+        account_url=f"https://{account_name}.dfs.core.windows.net",
+        credential=account_key
+    )
+    
+    file_client = service_client.get_file_system_client("refined").get_file_client("dados_processados.csv")
+    download = file_client.download_file()
+    df = pd.read_csv(download.readall())
+    
+    conn = pyodbc.connect(os.getenv("SQL_CONNECTION_STRING"))
+    cursor = conn.cursor()
+    
+    cursor.execute("""
+        IF NOT EXISTS (SELECT * FROM sysobjects WHERE name='dados_inflacao')
+        CREATE TABLE dados_inflacao (
+            orgao NVARCHAR(255),
+            categoria NVARCHAR(255),
+            ano INT,
+            mes INT,
+            valor FLOAT
+        )
+    """)
+    
+    for index, row in df.iterrows():
+        cursor.execute("""
+            INSERT INTO dados_inflacao (orgao, categoria, ano, mes, valor)
+            VALUES (?, ?, ?, ?, ?)
+        """, row['orgao'], row['categoria'], row['ano'], row['mes'], row['valor'])
+    
+    conn.commit()
+    conn.close()
+
+if __name__ == "__main__":
+    load_to_sql()
+
+#  ------------------------------------ Pasta build está vazia ------------------------------------ 
+
+#  ------------------------------------ Pasta docs está vazia ------------------------------------ 
+
+(PREENCHER ESSAS VARIÁVEIS COM VALORES FICTÍCIOS COMO SE FOSSE DE UMA CONTA AZURE DE VERDADE)
+# ------------------------------------ environments\dev.env ------------------------------------ 
+# Azure Storage
+AZURE_TENANT_ID = "11dbbfe2-89b8-4549-be10-cec364e59551"
+AZURE_CLIENT_ID = "<seu-client-id>"
+AZURE_CLIENT_SECRET = "<seu-client-secret>"
+STORAGE_ACCOUNT_NAME = "datalakefiap"
+
+AZURE_STORAGE_ACCOUNT_NAME=devstorageaccount
+AZURE_STORAGE_ACCOUNT_KEY=devkey
+
+# Database
+SQL_SERVER=dev-server.database.windows.net
+SQL_DATABASE=dev-db
+SQL_USER=dev-user
+SQL_PASSWORD=dev-password
+
+# ACR
+ACR_REGISTRY=devacr.azurecr.io
+
+(PREENCHER ESSAS VARIÁVEIS COM VALORES FICTÍCIOS COMO SE FOSSE DE UMA CONTA AZURE DE VERDADE)
+# ------------------------------------ environments\prod.env ------------------------------------ 
+# Azure Storage
+AZURE_STORAGE_ACCOUNT_NAME=prodstorageaccount
+AZURE_STORAGE_ACCOUNT_KEY=prodkey
+
+# Database
+SQL_SERVER=prod-server.database.windows.net
+SQL_DATABASE=prod-db
+SQL_USER=prod-user
+SQL_PASSWORD=prod-password
+
+# ACR
+ACR_REGISTRY=prodacr.azurecr.io
+
+# ------------------------------------ infrastructure\aks-deployment.yml ------------------------------------ 
+apiVersion: apps/v1
+kind: Deployment
+metadata:
+  name: ingestion
+  namespace: data-development-framework
+spec:
+  replicas: 1
+  selector:
+    matchLabels:
+      app: ingestion
+  template:
+    metadata:
+      labels:
+        app: ingestion
+    spec:
+      containers:
+        - name: ingestion
+          image: azcontaineregistryfiap.azurecr.io/ingestion:1.0.0
+          imagePullPolicy: Always
+---
+apiVersion: apps/v1
+kind: Deployment
+metadata:
+  name: transformation
+  namespace: data-development-framework
+spec:
+  replicas: 1
+  selector:
+    matchLabels:
+      app: transformation
+  template:
+    metadata:
+      labels:
+        app: transformation
+    spec:
+      containers:
+        - name: transformation
+          image: azcontaineregistryfiap.azurecr.io/transformation:1.0.0
+          imagePullPolicy: Always
+---
+apiVersion: apps/v1
+kind: Deployment
+metadata:
+  name: load
+  namespace: data-development-framework
+spec:
+  replicas: 1
+  selector:
+    matchLabels:
+      app: load
+  template:
+    metadata:
+      labels:
+        app: load
+    spec:
+      containers:
+        - name: load
+          image: azcontaineregistryfiap.azurecr.io/load:1.0.0
+          imagePullPolicy: Always
+---
+apiVersion: v1
+kind: Service
+metadata:
+  name: ingestion
+  namespace: data-development-framework
+spec:
+  type: ClusterIP 
+  selector:
+    app: ingestion
+  ports:
+    - protocol: TCP
+      port: 80
+      targetPort: 80 
+
+---
+apiVersion: v1
+kind: Service
+metadata:
+  name: transformation
+  namespace: data-development-framework
+spec:
+  type: ClusterIP
+  selector:
+    app: transformation
+  ports:
+    - protocol: TCP
+      port: 80
+      targetPort: 80
+
+---
+apiVersion: v1
+kind: Service
+metadata:
+  name: load
+  namespace: data-development-framework
+spec:
+  type: ClusterIP
+  selector:
+    app: load
+  ports:
+    - protocol: TCP
+      port: 80
+      targetPort: 80
+
+(PREENCHER ESSAS VARIÁVEIS COM VALORES FICTÍCIOS COMO SE FOSSE DE UMA CONTA AZURE DE VERDADE)
+# ------------------------------------ infrastructure\azure-resources.json ------------------------------------ 
+{
+    "$schema": "https://schema.management.azure.com/schemas/2019-04-01/deploymentTemplate.json#",
+    "contentVersion": "1.0.0.0",
+    "resources": [
+        {
+            "type": "Microsoft.ContainerService/managedClusters",
+            "apiVersion": "2023-02-01",
+            "name": "aks-cluster",
+            "location": "eastus",
+            "properties": {
+                "kubernetesVersion": "1.25",
+                "dnsPrefix": "yourdns",
+                "agentPoolProfiles": [{
+                    "name": "nodepool1",
+                    "count": 3,
+                    "vmSize": "Standard_B2s"
+                }]
+            }
+        },
+        {
+            "type": "Microsoft.Storage/storageAccounts",
+            "apiVersion": "2022-09-01",
+            "name": "yourdatalake",
+            "location": "eastus",
+            "kind": "StorageV2",
+            "sku": {
+                "name": "Standard_LRS"
+            },
+            "properties": {
+                "isHnsEnabled": true
+            }
+        }
+    ]
+}
+
+
+# ------------------------------------ infrastructure\vm-setup.sh ------------------------------------ 
+#!/bin/bash
+
+# Install required tools
+sudo apt-get update
+sudo apt-get install -y \
+    docker.io \
+    docker-compose \
+    azure-cli \
+    kubectl \
+    jq
+
+# Configure Docker permissions
+sudo usermod -aG docker $USER
+newgrp docker
+
+# Login to Azure Container Registry
+az acr login --name youracr
+
+# Configure Kubernetes
+az aks get-credentials \
+    --resource-group your-resource-group \
+    --name your-aks-cluster
+
+echo "Setup completed successfully!"
+
+# ------------------------------------ scripts\data-validation.py ------------------------------------ 
+from azure.storage.filedatalake import DataLakeServiceClient
+import os
+
+def validate_data():
+    account_name = os.getenv("AZURE_STORAGE_ACCOUNT_NAME")
+    account_key = os.getenv("AZURE_STORAGE_ACCOUNT_KEY")
+    
+    service_client = DataLakeServiceClient(
+        account_url=f"https://{account_name}.dfs.core.windows.net",
+        credential=account_key
+    )
+
+    # Verificar dados brutos
+    raw_files = service_client.get_file_system_client("raw").get_paths()
+    print(f"Total arquivos raw: {sum(1 for _ in raw_files)}")
+
+    # Verificar dados processados
+    refined_files = service_client.get_file_system_client("refined").get_paths()
+    refined_count = sum(1 for _ in refined_files)
+    print(f"Total arquivos refined: {refined_count}")
+
+    if refined_count == 0:
+        raise Exception("Validação falhou: Nenhum dado processado encontrado")
+
+if __name__ == "__main__":
+    validate_data()
+
+# ------------------------------------ scripts\stress-test.py ------------------------------------ 
+from locust import HttpUser, task, between
+import os
+
+class PipelineUser(HttpUser):
+    wait_time = between(1, 5)
+    
+    @task
+    def test_ingestion(self):
+        self.client.post("/ingest", json={
+            "sourceBaseURL": "https://api.bcb.gov.br",
+            "sourceRelativeURL": "dados/serie/bcdata.sgs.10843/dados?formato=json"
+        })
+
+    @task(3)
+    def test_query(self):
+        self.client.get("/query?year=2023")
+
+# ------------------------------------ docker-compose.yml ------------------------------------ 
+version: '3'
+
+services:
+  ingestion:
+    build: ./ingestion
+    environment:
+      - AZURE_STORAGE_ACCOUNT_NAME=your_account
+      - AZURE_STORAGE_ACCOUNT_KEY=your_key
+
+  transformation:
+    build: ./transformation
+    environment:
+      - AZURE_STORAGE_ACCOUNT_NAME=your_account
+      - AZURE_STORAGE_ACCOUNT_KEY=your_key
+    depends_on:
+      - ingestion
+
+  load-sql:
+    build: ./load-sql
+    environment:
+      - SQL_CONNECTION_STRING=your_connection_string
+    depends_on:
+      - transformation
+
+#  ------------------------------------ README.md ------------------------------------ 
+# data_development_framework_project_fiap
+
++-------------------+     +-------------------+     +-------------------+
+|    Azure VM Dev   |     |  Azure Kubernetes |     |  Azure SQL DB     |
+|  (Docker, Git)    | --> |  Service (AKS)    | --> |  & Data Lake Gen2 |
++-------------------+     +-------------------+     +-------------------+
+       |                        |
+       |    +-------------+     |
+       +--> | Container   |     |
+            | Registry   | <---+
+            +------------+
+
+
+az account show --query "tenantId" -o tsv
+
+az ad sp create-for-rbac --name "MyApp" --role "Contributor" --scopes "/subscriptions/075bacb9-59ee-438a-ba03-3eb9db5ee5d8"

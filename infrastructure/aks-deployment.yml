@@ -1,9 +1,29 @@
+# ------------------------------------ infrastructure/aks-deployment.yml ------------------------------------ 
+apiVersion: v1
+kind: Namespace
+metadata:
+  name: data-development-framework
+  labels:
+    environment: production
+    project: data-framework
+
+---
 apiVersion: apps/v1
 kind: Deployment
 metadata:
   name: ingestion
+  namespace: data-development-framework
+  labels:
+    app: ingestion
+    tier: backend
+    component: data-ingestion
 spec:
   replicas: 2
+  strategy:
+    type: RollingUpdate
+    rollingUpdate:
+      maxSurge: 1
+      maxUnavailable: 0
   selector:
     matchLabels:
       app: ingestion
@@ -11,48 +31,289 @@ spec:
     metadata:
       labels:
         app: ingestion
+        version: v1
     spec:
       containers:
       - name: ingestion
-        image: youracr.azurecr.io/ingestion:latest
+        image: azcontaineregistryfiap.azurecr.io/ingestion:1.0.0 
+        ports:
+        - containerPort: 8080
+        resources:
+          requests:
+            memory: "512Mi"
+            cpu: "500m"
+          limits:
+            memory: "1Gi"
+            cpu: "1000m"
         envFrom:
         - secretRef:
-            name: azure-secrets
+            name: azure-credentials
+        livenessProbe:
+          httpGet:
+            path: /health
+            port: 8080
+          initialDelaySeconds: 30
+          periodSeconds: 10
+          timeoutSeconds: 5
+          failureThreshold: 3
+        readinessProbe:
+          httpGet:
+            path: /ready
+            port: 8080
+          initialDelaySeconds: 20
+          periodSeconds: 5
+        lifecycle:
+          preStop:
+            exec:
+              command: ["sh", "-c", "sleep 10"]
 
 ---
 apiVersion: v1
 kind: Service
 metadata:
-  name: ingestion-service
+  name: ingestion
+  namespace: data-development-framework
+  labels:
+    app: ingestion
+    tier: backend
 spec:
   selector:
     app: ingestion
   ports:
-    - protocol: TCP
-      port: 80
-      targetPort: 5000
+  - protocol: TCP
+    port: 80
+    targetPort: 8080
+  type: ClusterIP
+
+---
+apiVersion: apps/v1
+kind: Deployment
+metadata:
+  name: transformation
+  namespace: data-development-framework
+  labels:
+    app: transformation
+    tier: backend
+    component: data-processing
+spec:
+  replicas: 2
+  strategy:
+    type: RollingUpdate
+    rollingUpdate:
+      maxSurge: 1
+      maxUnavailable: 0
+  selector:
+    matchLabels:
+      app: transformation
+  template:
+    metadata:
+      labels:
+        app: transformation
+        version: v1
+    spec:
+      containers:
+      - name: transformation
+        image: azcontaineregistryfiap.azurecr.io/transformation:1.0.0
+        ports:
+        - containerPort: 8080
+        resources:
+          requests:
+            memory: "1Gi"
+            cpu: "500m"
+          limits:
+            memory: "2Gi"
+            cpu: "1000m"
+        envFrom:
+        - secretRef:
+            name: azure-credentials
+        livenessProbe:
+          httpGet:
+            path: /health
+            port: 8080
+          initialDelaySeconds: 30
+          periodSeconds: 10
+        readinessProbe:
+          httpGet:
+            path: /ready
+            port: 8080
+          initialDelaySeconds: 20
+          periodSeconds: 5
+        lifecycle:
+          preStop:
+            exec:
+              command: ["sh", "-c", "sleep 10"]
 
 ---
 apiVersion: v1
 kind: Service
 metadata:
-  name: transformation-service
+  name: transformation
+  namespace: data-development-framework
+  labels:
+    app: transformation
+    tier: backend
 spec:
   selector:
     app: transformation
   ports:
-    - protocol: TCP
-      port: 80
-      targetPort: 5000
+  - protocol: TCP
+    port: 80
+    targetPort: 8080
+  type: ClusterIP
+
+---
+apiVersion: apps/v1
+kind: Deployment
+metadata:
+  name: load
+  namespace: data-development-framework
+  labels:
+    app: load
+    tier: backend
+    component: data-storage
+spec:
+  replicas: 2
+  strategy:
+    type: RollingUpdate
+    rollingUpdate:
+      maxSurge: 1
+      maxUnavailable: 0
+  selector:
+    matchLabels:
+      app: load
+  template:
+    metadata:
+      labels:
+        app: load
+        version: v1
+    spec:
+      containers:
+      - name: load
+        image: azcontaineregistryfiap.azurecr.io/load:1.0.0
+        ports:
+        - containerPort: 8080
+        resources:
+          requests:
+            memory: "512Mi"
+            cpu: "500m"
+          limits:
+            memory: "1Gi"
+            cpu: "1000m"
+        envFrom:
+        - secretRef:
+            name: azure-credentials
+        livenessProbe:
+          httpGet:
+            path: /health
+            port: 8080
+          initialDelaySeconds: 30
+          periodSeconds: 10
+        readinessProbe:
+          httpGet:
+            path: /ready
+            port: 8080
+          initialDelaySeconds: 20
+          periodSeconds: 5
+        lifecycle:
+          preStop:
+            exec:
+              command: ["sh", "-c", "sleep 10"]
+
 ---
 apiVersion: v1
 kind: Service
 metadata:
-  name: load-sql-service
+  name: load
+  namespace: data-development-framework
+  labels:
+    app: load
+    tier: backend
 spec:
   selector:
-    app: load-sql
+    app: load
   ports:
-    - protocol: TCP
-      port: 80
-      targetPort: 5000
+  - protocol: TCP
+    port: 80
+    targetPort: 8080
+  type: ClusterIP
+
+---
+apiVersion: autoscaling/v2beta2
+kind: HorizontalPodAutoscaler
+metadata:
+  name: ingestion-hpa
+  namespace: data-development-framework
+spec:
+  scaleTargetRef:
+    apiVersion: apps/v1
+    kind: Deployment
+    name: ingestion
+  minReplicas: 2
+  maxReplicas: 5
+  metrics:
+  - type: Resource
+    resource:
+      name: cpu
+      target:
+        type: Utilization
+        averageUtilization: 70
+  - type: Resource
+    resource:
+      name: memory
+      target:
+        type: Utilization
+        averageUtilization: 70
+
+---
+apiVersion: autoscaling/v2beta2
+kind: HorizontalPodAutoscaler
+metadata:
+  name: transformation-hpa
+  namespace: data-development-framework
+spec:
+  scaleTargetRef:
+    apiVersion: apps/v1
+    kind: Deployment
+    name: transformation
+  minReplicas: 2
+  maxReplicas: 5
+  metrics:
+  - type: Resource
+    resource:
+      name: cpu
+      target:
+        type: Utilization
+        averageUtilization: 70
+  - type: Resource
+    resource:
+      name: memory
+      target:
+        type: Utilization
+        averageUtilization: 70
+
+---
+apiVersion: autoscaling/v2beta2
+kind: HorizontalPodAutoscaler
+metadata:
+  name: load-hpa
+  namespace: data-development-framework
+spec:
+  scaleTargetRef:
+    apiVersion: apps/v1
+    kind: Deployment
+    name: load
+  minReplicas: 2
+  maxReplicas: 5
+  metrics:
+  - type: Resource
+    resource:
+      name: cpu
+      target:
+        type: Utilization
+        averageUtilization: 70
+  - type: Resource
+    resource:
+      name: memory
+      target:
+        type: Utilization
+        averageUtilization: 70

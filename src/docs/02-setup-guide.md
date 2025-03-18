@@ -1,8 +1,48 @@
-import requests
-import os
-from azure.storage.filedatalake import DataLakeServiceClient
+# Guia de Configuração
 
-configs = [
+## Pré-requisitos Azure
+1. Criar Service Principal:
+   ```bash
+   az ad sp create-for-rbac \
+     --name "data-pipeline-sp" \
+     --role "Contributor" \
+     --scopes "/subscriptions/075bacb9-59ee-438a-ba03-3eb9db5ee5d8/resourceGroups/mba-bruno"
+    ```
+
+2.  Configurar Storage Account:
+- Nome: sadatalakeprod
+- Hierarchical Namespace: Habilitado
+- Contêineres: raw, refined
+
+3. Configurar Azure SQL:
+```
+CREATE DATABASE analytics_prod
+COLLATE Latin1_General_100_CI_AS_SC_UTF8
+```
+
+# Configuração Local
+1. Variáveis de ambiente:
+```
+# Azure AD
+AZURE_TENANT_ID="11dbbfe2-89b8-4549-be10-cec364e59551" 
+AZURE_CLIENT_ID="a1b2c3d4-e5f6-7g8h-9i0j-k1l2m3n4o5p6"
+AZURE_CLIENT_SECRET="kLq7$9VxR!pZ3@bNvF8#sT4dQw2^Ym"      
+
+# Azure Storage
+STORAGE_ACCOUNT_NAME="sadatalakefiap"                   
+AZURE_STORAGE_ACCOUNT_KEY="Eby8vdM02xNOcqFlqUwJPLlmEtlCDXJ1OUzFT50uSRZ6IFsuFq2UVErCz4I6tq/K1SZFPTOtr/KBAS3O4rdDk0t8Xu24x7VBrTlnFjZP278F4@"
+
+# Banco de Dados
+SQL_SERVER="srv-fiap.database.windows.net"       
+SQL_DATABASE="db-fiap"                              
+SQL_USER="admin-fiap@srv-fiap"                   
+SQL_PASSWORD="jgvUH#$5h4r$#n5"                    
+
+# Azure Container Registry
+ACR_REGISTRY="azcontaineregistryfiap.azurecr.io"                   
+
+# Configuração dos Endpoints do BCB
+BCB_API_ENDPOINTS=[
     {
         "sourceBaseURL": "https://api.bcb.gov.br",
         "sourceRelativeURL": "dados/serie/bcdata.sgs.10843/dados?formato=json",
@@ -82,38 +122,8 @@ configs = [
         "sinkFolderPath": "bcb/inflacao"
     }
 ]
-
-def upload_to_datalake(file_content, file_path):
-    account_name = os.getenv("AZURE_STORAGE_ACCOUNT_NAME")
-    account_key = os.getenv("AZURE_STORAGE_ACCOUNT_KEY")
-    
-    service_client = DataLakeServiceClient(
-        account_url=f"https://{account_name}.dfs.core.windows.net",
-        credential=account_key
-    )
-    
-    file_system_client = service_client.get_file_system_client("raw")
-    directory_client = file_system_client.get_directory_client(os.path.dirname(file_path))
-    
-    if not directory_client.exists():
-        directory_client.create_directory()
-    
-    file_client = directory_client.create_file(os.path.basename(file_path))
-    file_client.append_data(file_content, 0, len(file_content))
-    file_client.flush_data(len(file_content))
-
-def main():
-    for config in configs:
-        try:
-            url = f"{config['sourceBaseURL']}/{config['sourceRelativeURL']}"
-            response = requests.get(url)
-            response.raise_for_status()
-            
-            file_path = f"{config['sinkFolderPath']}/{config['sinkFileName']}"
-            upload_to_datalake(response.content, file_path)
-            print(f"Arquivo {file_path} carregado com sucesso")
-        except Exception as e:
-            print(f"Erro no processamento {config['sinkFileName']}: {str(e)}")
-
-if __name__ == "__main__":
-    main()
+```
+2. Execução local:
+```
+docker-compose up --build
+```
