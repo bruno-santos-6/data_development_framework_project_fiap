@@ -1,6 +1,6 @@
 # Data Development Framework - Pipeline de Dados do Banco Central
 
-[![Build Status](https://img.shields.io/github/actions/workflow/status/your-repo/ci-cd-pipeline.yml?branch=main)](https://github.com/your-repo/actions)
+[![Build Status](https://img.shields.io/github/actions/workflow/status/data_development_framework_project_fiap/ci-cd-pipeline.yml?branch=main)](https://github.com/data_development_framework_project_fiap/actions)
 [![Azure Compliance](https://img.shields.io/badge/Azure%20Security-ISO27001-green)](https://azure.microsoft.com)
 [![Python 3.9](https://img.shields.io/badge/Python-3.9-blue)](https://python.org)
 [![License](https://img.shields.io/badge/License-MIT-yellow)](LICENSE)
